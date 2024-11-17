@@ -1,6 +1,6 @@
 # kakaologin_1
 
-A new Flutter project.
+kaka0_login_navi
 
 ## Getting Started
 
