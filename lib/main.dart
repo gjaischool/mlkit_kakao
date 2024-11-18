@@ -5,7 +5,7 @@ import 'package:kakao_flutter_sdk_navi/kakao_flutter_sdk_navi.dart';
 void main() {
   // Kakao SDK 초기화 - 네이티브 앱 키 설정
   KakaoSdk.init(
-    nativeAppKey: 'e0d646fb8b530736372d5b725b323514',
+    nativeAppKey: 'kakao_nativeAppKey',
   );
   runApp(const KakaoLoginTest());
 }
