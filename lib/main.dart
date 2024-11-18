@@ -1,8 +1,184 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
 import 'package:kakao_flutter_sdk_navi/kakao_flutter_sdk_navi.dart';
+import 'package:http/http.dart' as http;
+
+// 상수 분리
+class AppConstants {
+  static const kakaoYellow = Color(0xFFF7E600);
+  static const kakaoBrown = Color.fromRGBO(56, 35, 36, 1);
+
+  static const buttonPadding = EdgeInsets.symmetric(
+    horizontal: 24,
+    vertical: 12,
+  );
+  static const defaultSpacing = 16.0;
+  static const largeSpacing = 32.0;
+  static const avatarRadius = 40.0;
+}
+
+// 공통으로 사용되는 스타일
+class AppStyles {
+  static final elevatedButtonStyle = ElevatedButton.styleFrom(
+    backgroundColor: AppConstants.kakaoYellow,
+    foregroundColor: AppConstants.kakaoBrown,
+    padding: AppConstants.buttonPadding,
+  );
+
+  static const searchFieldDecoration = InputDecoration(
+    labelText: '목적지 입력',
+    hintText: '장소명을 입력하세요',
+    border: OutlineInputBorder(),
+  );
+}
+
+// 에러 처리를 위한 유틸리티 클래스
+class ErrorHandler {
+  static void showError(BuildContext context, String message) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+}
+
+// API 응답을 위한 모델 클래스
+class Place {
+  final String name;
+  final String address;
+  final String roadAddress;
+  final String category;
+  final String x;
+  final String y;
+  final String phone;
+
+  Place({
+    required this.name,
+    required this.address,
+    required this.roadAddress,
+    required this.category,
+    required this.x,
+    required this.y,
+    required this.phone,
+  });
+
+  factory Place.fromJson(Map<String, dynamic> json) {
+    return Place(
+      name: json['place_name'] ?? '',
+      address: json['address_name'] ?? '',
+      roadAddress: json['road_address_name'] ?? '',
+      category: json['category_name'] ?? '',
+      x: json['x'] ?? '',
+      y: json['y'] ?? '',
+      phone: json['phone'] ?? '',
+    );
+  }
+
+  Map<String, String> toMap() {
+    return {
+      'name': name,
+      'address': address,
+      'road_address': roadAddress,
+      'category': category,
+      'x': x,
+      'y': y,
+      'phone': phone,
+    };
+  }
+}
+
+// 최적화된 API 클래스
+class KakaoSearchApi {
+  static const String apiKey = "8938a9bd987f7a76e955d29ed7c4c6ee";
+  static final _client = http.Client(); // HTTP 클라이언트 재사용
+  static final Map<String, List<Place>> _cache = {};
+
+  static Future<List<Place>> searchPlace(String query) async {
+    if (query.trim().isEmpty) return const [];
+
+    // 캐시된 결과가 있으면 반환
+    if (_cache.containsKey(query)) {
+      return _cache[query]!;
+    }
+
+    try {
+      final response = await _client.get(
+        Uri.parse(
+            'https://dapi.kakao.com/v2/local/search/keyword.json?query=$query'),
+        headers: {'Authorization': 'KakaoAK $apiKey'},
+      );
+      debugPrint('응답 상태 코드 : ${response.statusCode}');
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        debugPrint('검색 결과 데이터 : $data');
+        final List<Place> results = (data['documents'] as List)
+            .map((place) => Place.fromJson(place))
+            .toList();
+
+        _cache[query] = results;
+        return results;
+      }
+      return const [];
+    } catch (e) {
+      debugPrint('장소 검색 실패: $e');
+      return const [];
+    }
+  }
+
+  static void dispose() {
+    _client.close();
+    _cache.clear();
+  }
+}
+
+// 검색 결과 아이템 위젯
+class SearchResultItem extends StatelessWidget {
+  final Place place;
+  final VoidCallback onNavigate;
+
+  const SearchResultItem({
+    super.key,
+    required this.place,
+    required this.onNavigate,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        title: Text(place.name),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(place.roadAddress.isNotEmpty
+                ? place.roadAddress
+                : place.address),
+            if (place.category.isNotEmpty)
+              Text(
+                place.category,
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 12,
+                ),
+              ),
+          ],
+        ),
+        trailing: ElevatedButton(
+          onPressed: onNavigate,
+          style: AppStyles.elevatedButtonStyle,
+          child: const Text('길 안내'),
+        ),
+        isThreeLine: true,
+      ),
+    );
+  }
+}
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   // Kakao SDK 초기화 - 네이티브 앱 키 설정
   KakaoSdk.init(
     nativeAppKey: 'e0d646fb8b530736372d5b725b323514',
@@ -10,7 +186,6 @@ void main() {
   runApp(const KakaoLoginTest());
 }
 
-// +J+3yf/mrgPgKeg1llIttpSjcws=
 class KakaoLoginTest extends StatelessWidget {
   const KakaoLoginTest({super.key});
 
@@ -21,10 +196,10 @@ class KakaoLoginTest extends StatelessWidget {
       // 앱의 전체적인 테마 설정
       theme: ThemeData(
         appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFFF7E600),
-          foregroundColor: Color.fromRGBO(56, 35, 36, 1),
+          backgroundColor: AppConstants.kakaoYellow,
+          foregroundColor: AppConstants.kakaoBrown,
           titleTextStyle: TextStyle(
-            color: Color.fromRGBO(56, 35, 36, 1),
+            color: AppConstants.kakaoBrown,
             fontSize: 18,
             fontWeight: FontWeight.bold,
           ),
@@ -46,46 +221,76 @@ class KakaoLogin extends StatefulWidget {
 class _KakaoLoginState extends State<KakaoLogin> {
   // 카카오톡 앱 설치 여부 상태
   bool _isKakaoTalkInstalled = false;
+  User? _user; // 사용자 정보를 저장할 변수 추가
+  bool _isLoading = true; // 로딩 상태 추가
 
   @override
   void initState() {
     super.initState();
     _initKakaoTalkInstalled();
+    _loadUserState(); // 사용자 상태 로드
+  }
+
+  // 현재 로그인 상태 확인
+  Future<void> _loadUserState() async {
+    try {
+      User? user = await UserApi.instance.me();
+      if (mounted) {
+        setState(() {
+          _user = user;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _user = null;
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   // 카카오톡 설치 여부 확인 함수
   Future<void> _initKakaoTalkInstalled() async {
     final installed = await isKakaoTalkInstalled();
+    // ignore: avoid_print
     print('isKakaoTalkInstalled : $installed');
+    // ignore: avoid_print
     print(await KakaoSdk.origin);
-    setState(() {
-      _isKakaoTalkInstalled = installed;
-    });
+    if (mounted) {
+      setState(() {
+        _isKakaoTalkInstalled = installed;
+      });
+    }
   }
 
   // 로그인 처리 함수
   Future<void> _handleLogin() async {
     try {
       if (_isKakaoTalkInstalled) {
-        print('카카오톡 설치됨');
+        debugPrint('카카오톡 설치됨');
         await _loginWithTalk(); // 카카오톡 설치되어 있으면 카카오톡으로 로그인
       } else {
         await _loginWithKakao(); // 미설치시 카카오 계정으로 로그인
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('로그인 실패: $e')),
-      );
+      if (mounted) {
+        ErrorHandler.showError(context, '로그인 실패: $e');
+      }
     }
   }
 
   Future<void> _loginWithKakao() async {
     try {
       OAuthToken token = await UserApi.instance.loginWithKakaoAccount();
-      print('카카오계정으로 로그인 성공 ${token.accessToken}');
-      _moveToLoginDone();
+      debugPrint('카카오계정으로 로그인 성공 ${token.accessToken}');
+      await _loadUserState(); // 로그인 후 사용자 정보 새로고침
+      if (mounted) {
+        _moveToLoginDone();
+      }
     } catch (e) {
-      print('카카오계정으로 로그인 실패 $e');
+      debugPrint('카카오계정으로 로그인 실패 $e');
       rethrow;
     }
   }
@@ -93,10 +298,13 @@ class _KakaoLoginState extends State<KakaoLogin> {
   Future<void> _loginWithTalk() async {
     try {
       OAuthToken token = await UserApi.instance.loginWithKakaoTalk();
-      print('카카오톡으로 로그인 성공 ${token.accessToken}');
-      _moveToLoginDone();
+      debugPrint('카카오톡으로 로그인 성공 ${token.accessToken}');
+      await _loadUserState(); // 로그인 후 사용자 정보 새로고침
+      if (mounted) {
+        _moveToLoginDone();
+      }
     } catch (e) {
-      print('카카오톡으로 로그인 실패 $e');
+      debugPrint('카카오톡으로 로그인 실패 $e');
       // 카카오톡에 연결된 카카오계정이 없는 경우, 카카오계정으로 로그인 시도
       await _loginWithKakao();
     }
@@ -104,14 +312,16 @@ class _KakaoLoginState extends State<KakaoLogin> {
 
   Future<void> _handleLogout() async {
     try {
-      await UserApi.instance.unlink();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('로그아웃 성공')),
-      );
+      if (mounted) {
+        setState(() {
+          _user = null;
+        });
+        ErrorHandler.showError(context, '로그아웃 성공');
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('로그아웃 실패: $e')),
-      );
+      if (mounted) {
+        ErrorHandler.showError(context, '로그아웃 실패: $e');
+      }
     }
   }
 
@@ -120,12 +330,18 @@ class _KakaoLoginState extends State<KakaoLogin> {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const LoginDone()),
-      //MaterialPageRoute(builder: (context) => const ColorChangeScreen()),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('카카오 로그인 테스트'),
@@ -135,28 +351,43 @@ class _KakaoLoginState extends State<KakaoLogin> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             // 로그인 버튼
-            ElevatedButton(
-              onPressed: _handleLogin,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFF7E600),
-                foregroundColor: const Color.fromRGBO(56, 35, 36, 1),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            if (_user != null) ...[
+              // 프로필 이미지
+              if (_user?.kakaoAccount?.profile?.profileImageUrl != null)
+                CircleAvatar(
+                  radius: AppConstants.avatarRadius,
+                  backgroundImage: NetworkImage(
+                    _user!.kakaoAccount!.profile!.profileImageUrl!,
+                  ),
+                ),
+              const SizedBox(height: AppConstants.defaultSpacing),
+              Text(
+                '환영합니다, ${_user?.kakaoAccount?.profile?.nickname ?? '사용자'}님!',
+                style: Theme.of(context).textTheme.titleLarge,
               ),
-              child: Text(
-                _isKakaoTalkInstalled ? '카카오톡으로 로그인' : '카카오계정으로 로그인',
+              const SizedBox(height: AppConstants.defaultSpacing),
+              // 네비게이션으로 이동하는 버튼
+              ElevatedButton(
+                onPressed: _moveToLoginDone,
+                style: AppStyles.elevatedButtonStyle,
+                child: const Text('길 안내 시작하기'),
               ),
-            ),
-            const SizedBox(height: 16),
-            // 로그아웃 버튼
-            ElevatedButton(
-              onPressed: _handleLogout,
-              style: ElevatedButton.styleFrom(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              const SizedBox(height: AppConstants.defaultSpacing),
+              // 로그아웃 버튼
+              ElevatedButton(
+                onPressed: _handleLogout,
+                child: const Text('로그아웃'),
               ),
-              child: const Text('로그아웃'),
-            ),
+            ] else ...[
+              // 로그인 버튼
+              ElevatedButton(
+                onPressed: _handleLogin,
+                style: AppStyles.elevatedButtonStyle,
+                child: Text(
+                  _isKakaoTalkInstalled ? '카카오톡으로 로그인' : '카카오계정으로 로그인',
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -173,7 +404,10 @@ class LoginDone extends StatefulWidget {
 
 class _LoginDoneState extends State<LoginDone> {
   User? _user;
-  String? _errorMessage;
+  final TextEditingController _destinationController = TextEditingController();
+  List<Place> _searchResults = const [];
+  bool _isSearching = false;
+  Timer? _debounce;
 
   @override
   void initState() {
@@ -181,54 +415,99 @@ class _LoginDoneState extends State<LoginDone> {
     _loadUserData();
   }
 
-  Future<void> _loadUserData() async {
+  @override
+  void dispose() {
+    _destinationController.dispose();
+    _debounce?.cancel();
+    KakaoSearchApi.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String query) {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      _searchPlace();
+    });
+  }
+
+  // 장소 검색 함수
+  Future<void> _searchPlace() async {
+    // 키보드 숨기기
+    if (!mounted) return;
+    FocusScope.of(context).unfocus();
+
+    if (_destinationController.text.isEmpty) return;
+
+    setState(() {
+      _isSearching = true;
+    });
+
     try {
-      User user = await UserApi.instance.me();
+      final results =
+          await KakaoSearchApi.searchPlace(_destinationController.text);
       setState(() {
-        _user = user;
-        _errorMessage = null;
+        _searchResults = results;
+        _isSearching = false;
       });
-      print('사용자 정보 요청 성공'
-          '\n회원번호: ${user.id}'
-          '\n닉네임: ${user.properties}');
-      print('${_user?.kakaoAccount?.profile!.profileImageUrl}');
+
+      if (results.isEmpty) {
+        if (mounted) {
+          ErrorHandler.showError(context, '검색 결과가 없습니다.');
+        }
+      }
     } catch (e) {
-      setState(() {
-        _errorMessage = '사용자 정보를 불러오는데 실패했습니다: $e';
-      });
-      print('사용자 정보 요청 실패 $e');
+      if (mounted) {
+        setState(() {
+          _isSearching = false;
+        });
+        ErrorHandler.showError(context, '검색 중 오류가 발생했습니다: $e');
+      }
     }
   }
 
-// 카카오내비 실행 함수
-  Future<void> _navigateWithKakaoNavi() async {
+  // 선택한 장소로 네비게이션 실행
+  Future<void> _navigateToPlace(Place place) async {
     try {
       if (await NaviApi.instance.isKakaoNaviInstalled()) {
-        // 카카오내비 앱으로 길 안내
         await NaviApi.instance.navigate(
-          // destination: Location(name: '카카오 판교오피스', x: '127.108640', y: '37.402111'), wgs84
-          destination: Location(name: '카카오 판교오피스', x: '321525', y: '532951'),
-          viaList: [
-            Location(name: '판교역 1번출구', x: '321525', y: '532951'),
-          ],
+          destination: Location(
+            name: place.name,
+            x: place.x,
+            y: place.y,
+          ),
+          option: NaviOption(
+            coordType: CoordType.wgs84,
+          ),
         );
       } else {
-        // 카카오내비 설치 페이지로 이동
         await launchBrowserTab(Uri.parse(NaviApi.webNaviInstall));
-        // 설치 안내 메시지 표시
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('카카오내비 앱이 설치되어 있지 않습니다. 설치 페이지로 이동합니다.'),
-            ),
+          ErrorHandler.showError(
+            context,
+            '카카오내비 앱이 설치되어 있지 않습니다. 설치 페이지로 이동합니다.',
           );
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('카카오내비 실행 중 오류가 발생했습니다: $e')),
-        );
+        ErrorHandler.showError(context, '네비게이션 실행 중 오류가 발생했습니다: $e');
+      }
+    }
+  }
+
+  Future<void> _loadUserData() async {
+    try {
+      User user = await UserApi.instance.me();
+      setState(() {
+        _user = user;
+      });
+      debugPrint('사용자 정보 요청 성공'
+          '\n회원번호: ${user.id}'
+          '\n닉네임: ${user.properties}');
+      debugPrint('${_user?.kakaoAccount?.profile!.profileImageUrl}');
+    } catch (e) {
+      if (mounted) {
+        ErrorHandler.showError(context, '사용자 정보를 불러오는데 실패했습니다: $e');
       }
     }
   }
@@ -240,79 +519,92 @@ class _LoginDoneState extends State<LoginDone> {
         title: const Text('로그인 성공'),
       ),
       // Stack을 사용하여 배경 터치 영역과 컨텐츠를 분리
-      body: Stack(
-        children: [
-          // 배경 터치 영역
-          Positioned.fill(
-            child: GestureDetector(
-              onTap: _navigateWithKakaoNavi,
-              // 투명한 배경을 사용하여 터치 이벤트 캐치
-              child: Container(
-                color: Colors.transparent,
-              ),
-            ),
-          ),
-          // 메인 컨텐츠
-          SafeArea(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                // 컨텐츠를 터치해도 배경 터치 이벤트가 발생하지 않도록 래핑
-                child: IgnorePointer(
-                  ignoring: false, // 컨텐츠 자체의 터치는 활성화
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      if (_errorMessage != null)
-                        Text(
-                          _errorMessage!,
-                          style: const TextStyle(color: Colors.red),
-                          textAlign: TextAlign.center,
-                        )
-                      else if (_user == null)
-                        const CircularProgressIndicator()
-                      else ...[
-                        if (_user?.kakaoAccount?.profile!.profileImageUrl !=
-                            null)
-                          CircleAvatar(
-                            radius: 40,
-                            backgroundImage: NetworkImage(
-                              _user!.kakaoAccount!.profile!.profileImageUrl!,
-                            ),
-                          ),
-                        const SizedBox(height: 16),
-                        Text(
-                          '환영합니다, ${_user?.kakaoAccount?.profile?.nickname ?? '사용자'}님!',
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                        const SizedBox(height: 20),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Text(
-                            '배경을 터치하여 카카오내비 실행',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        ),
-                      ],
-                      if (_errorMessage != null)
-                        ElevatedButton(
-                          onPressed: _loadUserData,
-                          child: const Text('다시 시도'),
-                        ),
-                    ],
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              // 기존 사용자 정보 표시
+              if (_user?.kakaoAccount?.profile!.profileImageUrl != null)
+                CircleAvatar(
+                  radius: AppConstants.avatarRadius,
+                  backgroundImage: NetworkImage(
+                    _user!.kakaoAccount!.profile!.profileImageUrl!,
                   ),
                 ),
+              const SizedBox(height: AppConstants.defaultSpacing),
+              Text(
+                '환영합니다, ${_user?.kakaoAccount?.profile?.nickname ?? '사용자'}님!',
+                style: Theme.of(context).textTheme.titleLarge,
               ),
-            ),
+              const SizedBox(height: AppConstants.largeSpacing),
+              // 검색 입력 필드
+              TextField(
+                controller: _destinationController,
+                decoration: AppStyles.searchFieldDecoration.copyWith(
+                  suffixIcon: IconButton(
+                    icon: _isSearching
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.search),
+                    onPressed: _searchPlace,
+                  ),
+                ),
+                onChanged: _onSearchChanged,
+                onSubmitted: (_) => _searchPlace(),
+                // 키보드의 검색 버튼을 검색 아이콘으로 변경
+                textInputAction: TextInputAction.search,
+              ),
+              const SizedBox(height: AppConstants.defaultSpacing),
+              // 검색 결과 리스트
+              Expanded(
+                child: ListView.builder(
+                  itemCount: _searchResults.length,
+                  itemBuilder: (context, index) {
+                    final place = _searchResults[index];
+                    return SearchResultItem(
+                      place: place,
+                      onNavigate: () => _navigateToPlace(place),
+                    );
+                    // Card(
+                    //   child: ListTile(
+                    //     title: Text(place.name),
+                    //     subtitle: Column(
+                    //       crossAxisAlignment: CrossAxisAlignment.start,
+                    //       children: [
+                    //         Text(place.roadAddress ?? place.address),
+                    //         if (place.category.isNotEmpty)
+                    //           Text(
+                    //             place.category,
+                    //             style: TextStyle(
+                    //               color: Colors.grey[600],
+                    //               fontSize: 12,
+                    //             ),
+                    //           ),
+                    //       ],
+                    //     ),
+                    //     trailing: ElevatedButton(
+                    //       onPressed: () =>
+                    //           _navigateToPlace(place as Map<String, dynamic>),
+                    //       style: ElevatedButton.styleFrom(
+                    //         backgroundColor: const Color(0xFFF7E600),
+                    //         foregroundColor:
+                    //             const Color.fromRGBO(56, 35, 36, 1),
+                    //       ),
+                    //       child: const Text('길 안내'),
+                    //     ),
+                    //     isThreeLine: true,
+                    //   ),
+                    // );
+                  },
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
