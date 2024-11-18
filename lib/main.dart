@@ -94,8 +94,7 @@ class Place {
 class KakaoSearchApi {
   static const String apiKey = "8938a9bd987f7a76e955d29ed7c4c6ee";
   static KakaoSearchApi? _instance;
-  final http.Client _client = http.Client(); // HTTP 클라이언트 재사용
-  final Map<String, List<Place>> _cache = {};
+  http.Client? _client; // HTTP 클라이언트 재사용
 
   // private 생성자
   KakaoSearchApi._();
@@ -109,13 +108,11 @@ class KakaoSearchApi {
   Future<List<Place>> searchPlace(String query) async {
     if (query.trim().isEmpty) return const [];
 
-    // 캐시된 결과가 있으면 반환
-    if (_cache.containsKey(query)) {
-      return _cache[query]!;
-    }
+    // 클라이언트가 없거나 닫혀있으면 새로 생성
+    _client ??= http.Client();
 
     try {
-      final response = await _client.get(
+      final response = await _client!.get(
         Uri.parse(
             'https://dapi.kakao.com/v2/local/search/keyword.json?query=$query'),
         headers: {'Authorization': 'KakaoAK $apiKey'},
@@ -129,7 +126,6 @@ class KakaoSearchApi {
             .map((place) => Place.fromJson(place))
             .toList();
 
-        _cache[query] = results;
         return results;
       }
       return const [];
@@ -140,8 +136,8 @@ class KakaoSearchApi {
   }
 
   void dispose() {
-    _client.close();
-    _cache.clear();
+    _client?.close();
+    _client = null;
   }
 }
 
@@ -436,7 +432,7 @@ class _LoginDoneState extends State<LoginDone> {
 
   // 장소 검색 함수
   Future<void> _searchPlace() async {
-    // 키보드 숨기기
+    // 검색시 키보드 숨기기
     if (!mounted) return;
     FocusScope.of(context).unfocus();
 
@@ -449,12 +445,12 @@ class _LoginDoneState extends State<LoginDone> {
     try {
       final results = await KakaoSearchApi.instance
           .searchPlace(_destinationController.text);
-      setState(() {
-        _searchResults = results;
-        _isSearching = false;
-      });
-      if (results.isEmpty) {
-        if (mounted) {
+      if (mounted) {
+        setState(() {
+          _searchResults = results;
+          _isSearching = false;
+        });
+        if (results.isEmpty) {
           ErrorHandler.showError(context, '검색 결과가 없습니다.');
         }
       }
@@ -550,7 +546,7 @@ class _LoginDoneState extends State<LoginDone> {
                         ? const SizedBox(
                             width: 24,
                             height: 24,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(strokeWidth: 3),
                           )
                         : const Icon(Icons.search),
                     onPressed: _searchPlace,
