@@ -8,7 +8,7 @@ import 'package:http/http.dart' as http;
 
 // 상수 분리
 class AppConstants {
-  static const kakaoYellow = Color(0xFFF7E600);
+  static const kakaoYellow = Color(0xFFFEE500);
   static const kakaoBrown = Color.fromRGBO(56, 35, 36, 1);
 
   static const buttonPadding = EdgeInsets.symmetric(
@@ -93,10 +93,20 @@ class Place {
 // 최적화된 API 클래스
 class KakaoSearchApi {
   static const String apiKey = "8938a9bd987f7a76e955d29ed7c4c6ee";
-  static final _client = http.Client(); // HTTP 클라이언트 재사용
-  static final Map<String, List<Place>> _cache = {};
+  static KakaoSearchApi? _instance;
+  final http.Client _client = http.Client(); // HTTP 클라이언트 재사용
+  final Map<String, List<Place>> _cache = {};
 
-  static Future<List<Place>> searchPlace(String query) async {
+  // private 생성자
+  KakaoSearchApi._();
+
+  // 싱글톤 인스턴스 getter
+  static KakaoSearchApi get instance {
+    _instance ??= KakaoSearchApi._();
+    return _instance!;
+  }
+
+  Future<List<Place>> searchPlace(String query) async {
     if (query.trim().isEmpty) return const [];
 
     // 캐시된 결과가 있으면 반환
@@ -111,6 +121,7 @@ class KakaoSearchApi {
         headers: {'Authorization': 'KakaoAK $apiKey'},
       );
       debugPrint('응답 상태 코드 : ${response.statusCode}');
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         debugPrint('검색 결과 데이터 : $data');
@@ -128,7 +139,7 @@ class KakaoSearchApi {
     }
   }
 
-  static void dispose() {
+  void dispose() {
     _client.close();
     _cache.clear();
   }
@@ -312,6 +323,7 @@ class _KakaoLoginState extends State<KakaoLogin> {
 
   Future<void> _handleLogout() async {
     try {
+      await UserApi.instance.unlink();
       if (mounted) {
         setState(() {
           _user = null;
@@ -380,11 +392,12 @@ class _KakaoLoginState extends State<KakaoLogin> {
               ),
             ] else ...[
               // 로그인 버튼
-              ElevatedButton(
-                onPressed: _handleLogin,
-                style: AppStyles.elevatedButtonStyle,
-                child: Text(
-                  _isKakaoTalkInstalled ? '카카오톡으로 로그인' : '카카오계정으로 로그인',
+              GestureDetector(
+                onTap: _handleLogin,
+                child: Image.asset(
+                  'assets/kakao_login_large_narrow.png',
+                  height: 90, // 카카오 로그인 버튼의 표준 높이
+                  width: 366, // 적절한 너비 설정
                 ),
               ),
             ],
@@ -407,7 +420,6 @@ class _LoginDoneState extends State<LoginDone> {
   final TextEditingController _destinationController = TextEditingController();
   List<Place> _searchResults = const [];
   bool _isSearching = false;
-  Timer? _debounce;
 
   @override
   void initState() {
@@ -418,16 +430,8 @@ class _LoginDoneState extends State<LoginDone> {
   @override
   void dispose() {
     _destinationController.dispose();
-    _debounce?.cancel();
-    KakaoSearchApi.dispose();
+    KakaoSearchApi.instance.dispose();
     super.dispose();
-  }
-
-  void _onSearchChanged(String query) {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 500), () {
-      _searchPlace();
-    });
   }
 
   // 장소 검색 함수
@@ -443,13 +447,12 @@ class _LoginDoneState extends State<LoginDone> {
     });
 
     try {
-      final results =
-          await KakaoSearchApi.searchPlace(_destinationController.text);
+      final results = await KakaoSearchApi.instance
+          .searchPlace(_destinationController.text);
       setState(() {
         _searchResults = results;
         _isSearching = false;
       });
-
       if (results.isEmpty) {
         if (mounted) {
           ErrorHandler.showError(context, '검색 결과가 없습니다.');
@@ -553,8 +556,7 @@ class _LoginDoneState extends State<LoginDone> {
                     onPressed: _searchPlace,
                   ),
                 ),
-                onChanged: _onSearchChanged,
-                onSubmitted: (_) => _searchPlace(),
+                onSubmitted: (_) => _searchPlace(), // 엔터키로 검색 가능
                 // 키보드의 검색 버튼을 검색 아이콘으로 변경
                 textInputAction: TextInputAction.search,
               ),
@@ -569,36 +571,6 @@ class _LoginDoneState extends State<LoginDone> {
                       place: place,
                       onNavigate: () => _navigateToPlace(place),
                     );
-                    // Card(
-                    //   child: ListTile(
-                    //     title: Text(place.name),
-                    //     subtitle: Column(
-                    //       crossAxisAlignment: CrossAxisAlignment.start,
-                    //       children: [
-                    //         Text(place.roadAddress ?? place.address),
-                    //         if (place.category.isNotEmpty)
-                    //           Text(
-                    //             place.category,
-                    //             style: TextStyle(
-                    //               color: Colors.grey[600],
-                    //               fontSize: 12,
-                    //             ),
-                    //           ),
-                    //       ],
-                    //     ),
-                    //     trailing: ElevatedButton(
-                    //       onPressed: () =>
-                    //           _navigateToPlace(place as Map<String, dynamic>),
-                    //       style: ElevatedButton.styleFrom(
-                    //         backgroundColor: const Color(0xFFF7E600),
-                    //         foregroundColor:
-                    //             const Color.fromRGBO(56, 35, 36, 1),
-                    //       ),
-                    //       child: const Text('길 안내'),
-                    //     ),
-                    //     isThreeLine: true,
-                    //   ),
-                    // );
                   },
                 ),
               ),
