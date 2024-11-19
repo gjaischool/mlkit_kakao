@@ -92,7 +92,7 @@ class Place {
 
 // 최적화된 API 클래스
 class KakaoSearchApi {
-  static const String apiKey = "8938a9bd987f7a76e955d29ed7c4c6ee";
+  static const String apiKey = "sed7c4c6ee";
   static final _client = http.Client(); // HTTP 클라이언트 재사용
   static final Map<String, List<Place>> _cache = {};
 
@@ -181,7 +181,7 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   // Kakao SDK 초기화 - 네이티브 앱 키 설정
   KakaoSdk.init(
-    nativeAppKey: 'e0d646fb8b530736372d5b725b323514',
+    nativeAppKey: 'e0d64db323514',
   );
   runApp(const KakaoLoginTest());
 }
